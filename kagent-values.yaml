@@ -1,0 +1,107 @@
+# kagent Helm values — Amazon EKS + Azure OpenAI
+#
+# Applied by install-kagent.sh, which also --sets from config.env:
+#     providers.azureOpenAI.model
+#     providers.azureOpenAI.config.azureEndpoint
+#     providers.azureOpenAI.config.azureDeployment
+#     providers.azureOpenAI.config.apiVersion
+#
+# The provider MUST be set here, at install time. The chart's bundled agents
+# bind their ModelConfig when the release is created, so applying a provider or
+# a secret afterwards is too late and surfaces as `secret "..." not found` on
+# pods that were already scheduled. Run setup-model.sh BEFORE this.
+
+providers:
+  default: azureOpenAI
+  azureOpenAI:
+    provider: AzureOpenAI
+
+    # The secret is created by setup-model.sh, not by Helm, so the key never
+    # passes through a values file or a --set (both of which would put it in
+    # `helm get values` output in clear text, and --set also in shell history).
+    #
+    # NOTE: kagent's docs and its chart disagree on these two key names --
+    # the docs page shows `apiKeySecret` / AZURE_OPENAI_API_KEY, the chart's
+    # values.yaml shows `apiKeySecretRef` / AZUREOPENAI_API_KEY. A mistyped
+    # Helm key is SILENTLY IGNORED, so install-kagent.sh checks the chart it is
+    # actually about to install and warns if these need swapping.
+    apiKeySecretRef: kagent-azure-openai
+    apiKeySecretKey: AZUREOPENAI_API_KEY
+
+    config:
+      # Injected by install-kagent.sh. Left empty rather than guessed so a
+      # missing --set fails visibly instead of installing against "".
+      azureEndpoint: ""
+      azureDeployment: ""
+
+      # A fallback only -- install-kagent.sh overrides this with
+      # AOAI_API_VERSION from config.env, where the reasoning lives. The
+      # chart's own default (2023-05-15) predates tool calling and must not be
+      # used.
+      apiVersion: "2024-12-01-preview"
+
+# --- Built-in agents -------------------------------------------------------
+#
+# The chart's defaults deploy ten agents and four tool services. That is a disk
+# problem on a small cluster and a COST problem everywhere, which is worse
+# because it is invisible: an agent re-sends its entire tool schema set on EVERY
+# turn -- around 2,250 tokens for the 22-tool k8s-agent. Ten agents is ten times
+# that surface area, billed per turn, forever.
+#
+# k8s-agent is the one this walkthrough uses, and it is the 22-tool half of
+# the comparison that make-lean-agent.sh completes.
+
+k8s-agent:
+  enabled: true
+
+argo-rollouts-agent:
+  enabled: false
+cilium-debug-agent:
+  enabled: false
+cilium-manager-agent:
+  enabled: false
+cilium-policy-agent:
+  enabled: false
+helm-agent:
+  enabled: false
+istio-agent:
+  enabled: false
+kgateway-agent:
+  enabled: false
+observability-agent:
+  enabled: false
+promql-agent:
+  enabled: false
+
+# --- Tool services ---------------------------------------------------------
+# kagent-tools provides the built-in Kubernetes tools the agent calls.
+# The rest are integrations this evaluation does not exercise.
+
+kagent-tools:
+  enabled: true
+
+grafana-mcp:
+  enabled: false
+querydoc:
+  enabled: false
+kmcp:
+  enabled: false
+
+# --- Database --------------------------------------------------------------
+#
+# CAVEAT, flagged rather than silently shipped: this is the chart's BUNDLED
+# PostgreSQL, which the chart itself marks development/evaluation only. It is
+# fine for a time-boxed evaluation and wrong for anything that outlives one.
+#
+# For anything permanent this becomes database.postgres.url pointing at a
+# managed instance such as RDS.
+#
+# 500Mi is deliberate and is plenty for an evaluation. Do not raise it without
+# checking `kubectl get nodes -o custom-columns=NAME:.metadata.name,\
+# CPU:.status.allocatable.cpu,MEM:.status.allocatable.memory` first.
+
+database:
+  postgres:
+    bundled:
+      enabled: true
+      storage: 500Mi

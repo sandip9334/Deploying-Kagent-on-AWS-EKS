@@ -1,0 +1,8 @@
+# Written by make-lean-agent.sh on every run -- outputs, not sources.
+k8s-agent-live.json
+k8s-lean-agent.json
+
+# Temp file setup-model.sh writes beside itself while updating config.env.
+config.env.tmp.*
+
+.DS_Store

@@ -1,0 +1,93 @@
+# Diagnostic fixture — two deliberately broken pods
+#
+# These are REAL failing workloads. On a shared or monitored cluster they will
+# raise alerts, so apply them only where that is expected — a sandbox, or with
+# your platform team's agreement.
+#
+# Apply:    kubectl apply -f test-broken-pod.yaml
+# Remove:   kubectl delete -f test-broken-pod.yaml
+#
+# Two failures on purpose: ImagePullBackOff is visible in pod status, while
+# the CrashLoopBackOff cause is only in the container logs. See RUNBOOK.md
+# step 9 for what each one is testing.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kagent-demo
+  labels:
+    purpose: kagent-evaluation
+    owner: platform-engineering-poc
+---
+# FAILURE 1 — ImagePullBackOff
+#
+# The tag does not exist. The agent should reach this from events/describe
+# without needing logs (there are none: the container never started).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broken-image
+  namespace: kagent-demo
+  labels:
+    app: broken-image
+    failure-mode: image-pull
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: broken-image
+  template:
+    metadata:
+      labels:
+        app: broken-image
+    spec:
+      containers:
+        - name: app
+          image: nginx:this-tag-does-not-exist-9f3a1c
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+---
+# FAILURE 2 — CrashLoopBackOff
+#
+# Exits 1 after printing a specific error to stderr. The message names a file
+# path that does not exist, so a correct diagnosis quotes it -- which makes
+# grading unambiguous: either the agent read the logs or it did not.
+#
+# `command` and `args` are quoted deliberately: the string contains ": ",
+# which unquoted parses as a mapping rather than a string. Do not unquote it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broken-config
+  namespace: kagent-demo
+  labels:
+    app: broken-config
+    failure-mode: crash-loop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: broken-config
+  template:
+    metadata:
+      labels:
+        app: broken-config
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["/bin/sh", "-c"]
+          args:
+            - "echo 'FATAL: config file /etc/app/config.yaml not found' >&2; sleep 2; exit 1"
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
